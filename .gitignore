@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local release output and credentials
+build/
+DerivedData/
+private_keys/
+*.p8
+*.ipa
+*.pkg
+*.xcarchive/

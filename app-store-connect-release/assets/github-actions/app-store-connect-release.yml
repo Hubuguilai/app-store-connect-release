@@ -1,0 +1,95 @@
+name: App Store Connect Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Release stage"
+        required: true
+        default: "validate"
+        type: choice
+        options:
+          - archive
+          - validate
+          - upload
+      confirm_upload:
+        description: "Required only when mode is upload"
+        required: true
+        default: false
+        type: boolean
+      allow_provisioning_updates:
+        description: "Allow Xcode to update signing assets"
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  release:
+    runs-on: macos-14
+    env:
+      ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+      ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+      APP_SCHEME: ${{ vars.APP_SCHEME }}
+      APP_PLATFORM: ${{ vars.APP_PLATFORM || 'macOS' }}
+      SKILL_DIR: .codex/skills/app-store-connect-release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Store the base64-encoded contents of AuthKey_<KEY_ID>.p8 as a secret.
+      - name: Materialize App Store Connect key
+        shell: bash
+        env:
+          ASC_API_KEY_P8_B64: ${{ secrets.ASC_API_KEY_P8_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$ASC_API_KEY_P8_B64"
+          key_path="$RUNNER_TEMP/AuthKey_${ASC_API_KEY_ID}.p8"
+          printf '%s' "$ASC_API_KEY_P8_B64" | base64 --decode > "$key_path"
+          chmod 600 "$key_path"
+          echo "ASC_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Check release prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--project-root . --platform "$APP_PLATFORM" --require-api)
+          test -n "$APP_SCHEME" && args+=(--scheme "$APP_SCHEME")
+          python3 "$SKILL_DIR/scripts/check_release_prerequisites.py" "${args[@]}"
+
+      - name: Archive
+        if: ${{ inputs.mode == 'archive' || inputs.mode == 'validate' || inputs.mode == 'upload' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--project-root . --platform "$APP_PLATFORM" --mode archive)
+          test -n "$APP_SCHEME" && args+=(--scheme "$APP_SCHEME")
+          [[ "${{ inputs.allow_provisioning_updates }}" == "true" ]] && args+=(--allow-provisioning-updates)
+          python3 "$SKILL_DIR/scripts/release_upload.py" "${args[@]}"
+
+      - name: Validate
+        if: ${{ inputs.mode == 'validate' || inputs.mode == 'upload' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--project-root . --platform "$APP_PLATFORM" --mode validate)
+          test -n "$APP_SCHEME" && args+=(--scheme "$APP_SCHEME")
+          [[ "${{ inputs.allow_provisioning_updates }}" == "true" ]] && args+=(--allow-provisioning-updates)
+          python3 "$SKILL_DIR/scripts/release_upload.py" "${args[@]}"
+
+      - name: Upload
+        if: ${{ inputs.mode == 'upload' && inputs.confirm_upload == true }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          package="$(find build/AppStoreConnectRelease/export -maxdepth 1 -type f \( -name '*.ipa' -o -name '*.pkg' \) -print -quit)"
+          test -n "$package"
+          args=(--project-root . --platform "$APP_PLATFORM" --mode upload --package "$package" --confirm-upload)
+          test -n "$APP_SCHEME" && args+=(--scheme "$APP_SCHEME")
+          python3 "$SKILL_DIR/scripts/release_upload.py" "${args[@]}"
+
+      - name: Refuse unconfirmed upload
+        if: ${{ inputs.mode == 'upload' && inputs.confirm_upload != true }}
+        run: |
+          echo "Upload was requested without confirm_upload=true. No package was uploaded." >&2
+          exit 1

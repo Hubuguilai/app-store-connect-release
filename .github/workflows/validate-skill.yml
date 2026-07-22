@@ -1,0 +1,40 @@
+name: Validate Skill
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app-store-connect-release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install validation dependency
+        run: python -m pip install pyyaml
+      - name: Validate skill metadata
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import yaml
+
+          text = Path("SKILL.md").read_text(encoding="utf-8")
+          match = re.match(r"^---\n(.*?)\n---\n", text, re.S)
+          assert match, "SKILL.md frontmatter is missing"
+          frontmatter = yaml.safe_load(match.group(1))
+          assert frontmatter["name"] == "app-store-connect-release"
+          assert len(frontmatter["description"]) <= 1024
+          interface = yaml.safe_load(Path("agents/openai.yaml").read_text(encoding="utf-8"))
+          assert "$app-store-connect-release" in interface["interface"]["default_prompt"]
+          print("Skill metadata is valid")
+          PY
+      - name: Compile Python scripts
+        run: python -m py_compile scripts/*.py tests/*.py
+      - name: Run tests
+        run: python -m unittest discover -s tests -v

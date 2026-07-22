@@ -1,0 +1,4 @@
+interface:
+  display_name: "App Store Connect Release"
+  short_description: "Build, validate, and upload Xcode apps safely"
+  default_prompt: "Use $app-store-connect-release to audit and prepare this Xcode project for App Store Connect upload."
