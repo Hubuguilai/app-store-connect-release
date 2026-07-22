@@ -12,6 +12,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from discover_xcode_project import candidates, parse_schemes
+
 
 def run_command(args: list[str], cwd: Path) -> tuple[int, str]:
     try:
@@ -37,6 +39,17 @@ def display_path(path: Path, root: Path) -> str:
         return str(path.relative_to(root))
     except ValueError:
         return str(path)
+
+
+def select_container(root: Path, explicit: str | None, suffix: str) -> tuple[Path | None, list[Path]]:
+    if explicit:
+        path = Path(explicit).expanduser()
+        return ((root / path).resolve() if not path.is_absolute() else path.resolve()), []
+    found = candidates(root, suffix)
+    if len(found) == 1:
+        return found[0], found
+    top_level = [path for path in found if path.parent == root]
+    return (top_level[0] if len(top_level) == 1 else None), found
 
 
 def main() -> int:
@@ -73,20 +86,16 @@ def main() -> int:
     else:
         add_result(results, "xcrun", "WARN", "xcrun is not available; upload tools cannot run here")
 
-    workspace = root / args.workspace if args.workspace else None
-    project = root / args.project if args.project else None
-    if workspace is None and root.is_dir():
-        candidates = sorted(root.glob("*.xcworkspace"))
-        workspace = candidates[0] if len(candidates) == 1 else None
-    if project is None and root.is_dir():
-        candidates = sorted(root.glob("*.xcodeproj"))
-        project = candidates[0] if len(candidates) == 1 else None
+    workspace, workspaces = select_container(root, args.workspace, ".xcworkspace") if root.is_dir() else (None, [])
+    project, projects = select_container(root, args.project, ".xcodeproj") if root.is_dir() else (None, [])
 
     if workspace and workspace.exists():
         add_result(results, "workspace", "PASS", display_path(workspace, root))
     elif args.workspace:
         add_result(results, "workspace", "FAIL", f"Not found: {workspace}")
         errors += 1
+    elif len(workspaces) > 1:
+        add_result(results, "workspace", "INFO", f"Multiple workspaces discovered ({len(workspaces)}); pass --workspace to select one")
     else:
         add_result(results, "workspace", "INFO", "No single workspace discovered")
 
@@ -95,6 +104,8 @@ def main() -> int:
     elif args.project:
         add_result(results, "project", "FAIL", f"Not found: {project}")
         errors += 1
+    elif len(projects) > 1:
+        add_result(results, "project", "INFO", f"Multiple projects discovered ({len(projects)}); pass --project to select one")
     else:
         add_result(results, "project", "INFO", "No single project discovered")
 
@@ -104,7 +115,8 @@ def main() -> int:
             flag = "-workspace" if container.suffix == ".xcworkspace" else "-project"
             command = [xcodebuild, flag, str(container), "-list"]
             code, output = run_command(command, root)
-            if code == 0 and args.scheme in output:
+            available_schemes = parse_schemes(output) if code == 0 else []
+            if code == 0 and args.scheme in available_schemes:
                 add_result(results, "scheme", "PASS", args.scheme)
             elif code == 0:
                 add_result(results, "scheme", "FAIL", f"Scheme was not found: {args.scheme}")
