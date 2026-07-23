@@ -176,6 +176,60 @@ def attributes(resource: Optional[dict[str, Any]]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+REDACTED = "[REDACTED]"
+SENSITIVE_OUTPUT_KEYS = {
+    "authorization",
+    "accesstoken",
+    "idtoken",
+    "privatekey",
+    "refreshtoken",
+    "secret",
+    "token",
+}
+
+
+def redact_api_output(
+    value: Any,
+    *,
+    in_upload_operation: bool = False,
+    in_upload_headers: bool = False,
+) -> Any:
+    """Return a JSON-safe copy with credentials and signed upload details removed."""
+
+    if isinstance(value, list):
+        return [
+            redact_api_output(
+                item,
+                in_upload_operation=in_upload_operation,
+                in_upload_headers=in_upload_headers,
+            )
+            for item in value
+        ]
+    if not isinstance(value, dict):
+        return value
+
+    redacted: dict[str, Any] = {}
+    for key, item in value.items():
+        normalized = str(key).replace("_", "").replace("-", "").lower()
+        if normalized in SENSITIVE_OUTPUT_KEYS:
+            redacted[key] = REDACTED
+        elif in_upload_operation and normalized == "url":
+            redacted[key] = REDACTED
+        elif in_upload_headers and normalized != "name":
+            redacted[key] = REDACTED
+        else:
+            child_upload_operation = in_upload_operation or normalized == "uploadoperations"
+            child_upload_headers = in_upload_headers or (
+                in_upload_operation and normalized in {"headers", "requestheaders"}
+            )
+            redacted[key] = redact_api_output(
+                item,
+                in_upload_operation=child_upload_operation,
+                in_upload_headers=child_upload_headers,
+            )
+    return redacted
+
+
 class AppStoreConnectClient:
     def __init__(self, credentials: Credentials, *, timeout: int = 60, retries: int = 3):
         self.credentials = credentials
@@ -320,8 +374,9 @@ def cli() -> int:
     else:
         result = client.get(args.path, parse_params(args.param), version=args.api_version)
 
+    safe_result = redact_api_output(result)
     if args.json:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(safe_result, ensure_ascii=False, indent=2))
     elif isinstance(result, dict) and "data" in result:
         items = data_list(result)
         print(f"Returned resources: {len(items)}")
@@ -330,7 +385,7 @@ def cli() -> int:
             label = attrs.get("name") or attrs.get("versionString") or attrs.get("bundleId") or attrs.get("buildNumber") or ""
             print(f"{item.get('type', '')} {item.get('id', '')} {label}".rstrip())
     else:
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        print(json.dumps(safe_result, ensure_ascii=False, indent=2))
     return 0
 
 

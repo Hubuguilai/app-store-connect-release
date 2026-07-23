@@ -12,7 +12,8 @@ This guide assumes you have never used an App Store Connect API key. Follow the 
 | --- | --- | --- | --- |
 | A | Audit the local Xcode project | No | No |
 | B | Query App Store Connect | Yes | No |
-| C | Archive, validate, or upload | Yes | Upload only after confirmation |
+| C1 | Create a local Archive | No | No |
+| C2 | Validate with Apple or upload | Yes | Upload only after confirmation |
 
 New users should complete Route A first, then continue to Route B.
 
@@ -21,7 +22,7 @@ New users should complete Route A first, then continue to Route B.
 - A Mac with Xcode installed.
 - A folder containing an `.xcodeproj` or `.xcworkspace`.
 - Codex with terminal access to that folder.
-- For Route B or C: access to the app in App Store Connect.
+- For Route B or C2: access to the app in App Store Connect.
 - For a team API key: an Account Holder or Admin account.
 
 You do not need an API key for a local read-only audit.

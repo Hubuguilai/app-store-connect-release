@@ -12,7 +12,8 @@
 | --- | --- | --- | --- |
 | A | 检查本地 Xcode 项目 | 不需要 | 不会 |
 | B | 查询 App Store Connect | 需要 | 不会 |
-| C | Archive、验证或上传 | 需要 | 只有确认上传后才会 |
+| C1 | 创建本地 Archive | 不需要 | 不会 |
+| C2 | 使用 Apple 验证或上传 | 需要 | 只有确认上传后才会 |
 
 新手应先完成路线 A，再继续路线 B。
 
@@ -21,7 +22,7 @@
 - 一台安装了 Xcode 的 Mac。
 - 一个包含 `.xcodeproj` 或 `.xcworkspace` 的项目文件夹。
 - Codex 能够访问该文件夹和终端。
-- 路线 B 或 C：你能在 App Store Connect 中访问这个 App。
+- 路线 B 或 C2：你能在 App Store Connect 中访问这个 App。
 - 创建团队 API Key：账号具有 Account Holder 或 Admin 权限。
 
 只做本地只读审计时，不需要 API Key。
