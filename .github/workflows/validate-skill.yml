@@ -2,6 +2,8 @@ name: Validate Skill
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
@@ -33,6 +35,39 @@ jobs:
           interface = yaml.safe_load(Path("agents/openai.yaml").read_text(encoding="utf-8"))
           assert "$app-store-connect-release" in interface["interface"]["default_prompt"]
           print("Skill metadata is valid")
+          PY
+      - name: Validate multilingual documentation
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path("..").resolve()
+          guides = [
+              root / "docs/en/quick-start.md",
+              root / "docs/zh-CN/quick-start.md",
+              root / "docs/ja/quick-start.md",
+          ]
+          required = (
+              "$app-store-connect-release",
+              "ASC_API_KEY_ID",
+              "ASC_API_ISSUER_ID",
+              "ASC_API_KEY_PATH",
+              "--confirm-upload",
+          )
+          image_sets = []
+          for guide in guides:
+              text = guide.read_text(encoding="utf-8")
+              assert text.count("```") % 2 == 0, f"Unclosed code fence: {guide}"
+              images = re.findall(r"!\[[^]]*\]\(([^)]+)\)", text)
+              assert len(images) == 8, f"Expected 8 tutorial images in {guide}"
+              for image in images:
+                  assert (guide.parent / image).resolve().is_file(), f"Missing {image} from {guide}"
+              for token in required:
+                  assert token in text, f"Missing {token} from {guide}"
+              image_sets.append(images)
+          assert image_sets[0] == image_sets[1] == image_sets[2], "Tutorial image order differs by language"
+          print("Multilingual documentation is valid")
           PY
       - name: Compile Python scripts
         run: python -m py_compile scripts/*.py tests/*.py
