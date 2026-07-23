@@ -15,6 +15,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import sync_iap  # noqa: E402
 import sync_metadata  # noqa: E402
 import sync_screenshots  # noqa: E402
+import asc_api_client  # noqa: E402
+from asc_api_client import REDACTED, redact_api_output  # noqa: E402
 
 
 def png_header(width: int, height: int) -> bytes:
@@ -150,6 +152,69 @@ class ApiWorkflowTests(unittest.TestCase):
                 self.assertEqual(sync_screenshots.main(), 0)
             client = FakeClient.instances[-1]
             self.assertEqual(client.post_calls, [])
+
+    def test_api_output_redacts_signed_upload_details_without_mutating_response(self) -> None:
+        signed_url = "https://signed.example/upload?signature=temporary-secret"
+        response = {
+            "data": {
+                "attributes": {
+                    "privacyPolicyUrl": "https://example.com/privacy",
+                    "uploadOperations": [{
+                        "url": signed_url,
+                        "method": "PUT",
+                        "length": 4,
+                        "offset": 0,
+                        "requestHeaders": [
+                            {"name": "Authorization", "value": "temporary-header-secret"},
+                            {"name": "Content-Type", "value": "image/png"},
+                        ],
+                    }],
+                },
+            },
+            "meta": {"token": "temporary-token"},
+        }
+
+        safe_response = redact_api_output(response)
+        operation = safe_response["data"]["attributes"]["uploadOperations"][0]
+
+        self.assertEqual(operation["url"], REDACTED)
+        self.assertEqual(operation["requestHeaders"][0]["value"], REDACTED)
+        self.assertEqual(operation["requestHeaders"][1]["value"], REDACTED)
+        self.assertEqual(operation["method"], "PUT")
+        self.assertEqual(operation["length"], 4)
+        self.assertEqual(safe_response["meta"]["token"], REDACTED)
+        self.assertEqual(safe_response["data"]["attributes"]["privacyPolicyUrl"], "https://example.com/privacy")
+        self.assertEqual(response["data"]["attributes"]["uploadOperations"][0]["url"], signed_url)
+
+    def test_json_get_cli_never_prints_signed_upload_url(self) -> None:
+        signed_url = "https://signed.example/upload?signature=temporary-secret"
+
+        class JsonClient:
+            def __init__(self, credentials: object, **kwargs: object):
+                pass
+
+            def get(self, path: str, params: dict | None = None, **kwargs: object) -> dict:
+                return {
+                    "data": {
+                        "attributes": {
+                            "uploadOperations": [{
+                                "url": signed_url,
+                                "requestHeaders": [{"name": "Authorization", "value": "temporary-header-secret"}],
+                            }],
+                        },
+                    },
+                }
+
+        argv = ["asc_api_client.py", "get", "--path", "/appScreenshots/shot1", "--json"]
+        with patch.object(asc_api_client, "resolve_credentials", return_value=object()), patch.object(
+            asc_api_client, "AppStoreConnectClient", JsonClient
+        ), patch.object(sys, "argv", argv), patch("builtins.print") as print_mock:
+            self.assertEqual(asc_api_client.cli(), 0)
+
+        output = print_mock.call_args.args[0]
+        self.assertNotIn(signed_url, output)
+        self.assertNotIn("temporary-header-secret", output)
+        self.assertIn(REDACTED, output)
 
     def test_screenshot_apply_registers_and_confirms_asset(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
